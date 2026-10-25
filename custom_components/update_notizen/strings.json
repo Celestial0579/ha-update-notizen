@@ -1,0 +1,51 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up update notes",
+        "description": "Fetches the release notes for every pending update (Home Assistant, add-ons/apps, HACS) and fires the `update_notizen_bericht` event on the configured schedule. Adjust schedule and size under “Configure” afterwards."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Update notes is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Report schedule",
+        "description": "The report fires from the given time at the given interval – with 24 h that is daily at that time.",
+        "data": {
+          "uhrzeit": "Time",
+          "intervall": "Interval",
+          "nur_bei_aenderung": "Only report when the pending updates changed",
+          "max_zeichen": "Maximum characters per update"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "offene": {
+        "name": "Pending updates"
+      }
+    },
+    "button": {
+      "bericht": {
+        "name": "Report now"
+      }
+    }
+  },
+  "services": {
+    "abrufen": {
+      "name": "Fetch notes",
+      "description": "Returns the release notes for pending updates (response with updates and integrationen).",
+      "fields": {
+        "entity_id": {
+          "name": "Updates",
+          "description": "Only these update entities; empty = all pending."
+        }
+      }
+    }
+  }
+}

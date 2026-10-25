@@ -1,0 +1,13 @@
+{
+  "domain": "update_notizen",
+  "name": "Update-Notizen",
+  "codeowners": ["@Celestial0579"],
+  "config_flow": true,
+  "documentation": "https://github.com/Celestial0579/ha-update-notizen",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/Celestial0579/ha-update-notizen/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

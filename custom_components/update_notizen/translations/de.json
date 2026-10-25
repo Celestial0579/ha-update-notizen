@@ -1,0 +1,51 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Update-Notizen einrichten",
+        "description": "Holt zu jedem offenen Update (Home Assistant, Add-ons/Apps, HACS) die Änderungsnotizen und löst im eingestellten Takt das Ereignis `update_notizen_bericht` aus. Takt und Umfang stellst du danach unter „Konfigurieren“ ein."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Update-Notizen ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Berichtstakt",
+        "description": "Der Bericht wird ab der Uhrzeit im angegebenen Abstand ausgelöst – mit 24 h also täglich zu dieser Uhrzeit.",
+        "data": {
+          "uhrzeit": "Uhrzeit",
+          "intervall": "Abstand",
+          "nur_bei_aenderung": "Nur melden, wenn sich die offenen Updates geändert haben",
+          "max_zeichen": "Höchstens Zeichen je Update"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "offene": {
+        "name": "Offene Updates"
+      }
+    },
+    "button": {
+      "bericht": {
+        "name": "Bericht jetzt"
+      }
+    }
+  },
+  "services": {
+    "abrufen": {
+      "name": "Notizen abrufen",
+      "description": "Gibt zu offenen Updates die Änderungsnotizen zurück (Antwort mit updates und integrationen).",
+      "fields": {
+        "entity_id": {
+          "name": "Updates",
+          "description": "Nur diese Update-Entitäten; leer = alle offenen."
+        }
+      }
+    }
+  }
+}

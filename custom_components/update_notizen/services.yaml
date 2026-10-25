@@ -1,0 +1,7 @@
+abrufen:
+  fields:
+    entity_id:
+      selector:
+        entity:
+          domain: update
+          multiple: true

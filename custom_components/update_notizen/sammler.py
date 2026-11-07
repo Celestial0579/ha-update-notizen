@@ -11,7 +11,7 @@ import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_point_in_time, async_track_state_change_filtered, TrackStates
 from homeassistant.helpers.storage import Store
@@ -83,6 +83,19 @@ class Sammler:
         self._melden()
 
     # ------------------------------------------------------------ Abfragen
+    def _anzeigename(self, zustand: Any) -> str:
+        """Name wie in der Oberfläche: Gerät + eigener Name der Entität.
+
+        Seit Home Assistant 2026.11 setzt sich der Anzeigename so zusammen, und friendly_name gilt als veraltet.
+        Vor 2026.11 (kein entity_name im Register) bleibt es beim bisherigen Namen des Zustands.
+        """
+        eintrag = er.async_get(self.hass).async_get(zustand.entity_id)
+        if eintrag is None or not hasattr(eintrag, "entity_name"):
+            return zustand.name
+        geraet = dr.async_get(self.hass).async_get(eintrag.device_id) if eintrag.device_id else None
+        teile = [geraet.name_by_user or geraet.name if geraet else None, eintrag.entity_name]
+        return " ".join(t for t in teile if t) or zustand.name
+
     def offene(self) -> list[dict[str, str]]:
         """Alle Update-Entitäten mit verfügbarem Update."""
         ergebnis = []
@@ -92,7 +105,7 @@ class Sammler:
             ergebnis.append(
                 {
                     "entity_id": zustand.entity_id,
-                    "name": zustand.name,
+                    "name": self._anzeigename(zustand),
                     "installiert": str(zustand.attributes.get("installed_version") or ""),
                     "neu": str(zustand.attributes.get("latest_version") or ""),
                     "url": str(zustand.attributes.get("release_url") or ""),

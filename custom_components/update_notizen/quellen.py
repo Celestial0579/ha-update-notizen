@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import re
 import time
+from urllib.parse import quote, unquote
 
 import aiohttp
 
@@ -44,6 +45,11 @@ def _sperre_bis(kopf) -> float:
         pass
     return jetzt + 3600
 _ZEIT = aiohttp.ClientTimeout(total=30)
+# Nur gültige Namen: Eigentümer wie bei GitHub (Buchstaben, Ziffern, Bindestrich), Repo zusätzlich
+# Punkt und Unterstrich. Sonst könnte ein release_url mit „..“, „?“ oder „#“ andere Pfade der API treffen.
+RELEASE_LINK = re.compile(
+    r"https://github\.com/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))/([A-Za-z0-9_.-]{1,100})/releases/(?:tag/)?([^/?#]+)/?(?:[?#].*)?"
+)
 
 ALLGEMEIN = {
     "authentication", "conditions", "condition", "triggers", "trigger", "templates", "template",
@@ -66,10 +72,13 @@ async def _holen(sitzung: aiohttp.ClientSession, url: str, kopf: dict[str, str] 
 
 async def github_release(sitzung: aiohttp.ClientSession, url: str) -> str | None:
     """Text eines GitHub-Releases aus einem Release-Link."""
-    treffer = re.match(r"https://github\.com/([^/]+)/([^/]+)/releases/(?:tag/)?([^/?#]+)", url or "")
+    treffer = RELEASE_LINK.fullmatch(url or "")
     if not treffer:
         return None
     eigner, repo, tag = treffer.groups()
+    if repo in (".", "..") or tag in (".", ".."):
+        return None
+    tag = quote(unquote(tag), safe="")
     async with sitzung.get(
         f"https://api.github.com/repos/{eigner}/{repo}/releases/tags/{tag}",
         headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"},

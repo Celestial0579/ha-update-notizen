@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timedelta
 import logging
+import time
 from typing import Any
 
 import aiohttp
@@ -29,6 +30,8 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+FEHLER_MERKEN = 1800  # Sekunden, bis ein fehlgeschlagener Abruf wiederholt wird
+CORE_KENNUNG = "home_assistant_core_version_latest"
 
 
 class Sammler:
@@ -42,6 +45,8 @@ class Sammler:
         self._store: Store[dict[str, Any]] = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}")
         self._gemeldet: list[str] = []
         self._zwischenspeicher: dict[str, dict[str, Any]] = {}
+        self._fehlschlaege: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._github_bis = 0.0
         self._zuhoerer: list[Callable[[], None]] = []
         self._abmelden: list[CALLBACK_TYPE] = []
         self._zeitplan: CALLBACK_TYPE | None = None
@@ -124,15 +129,24 @@ class Sammler:
         integrationen = self.integrationen()
         laenge = int(self.opt(CONF_MAX_ZEICHEN))
         updates: dict[str, Any] = {}
+        # Nur Einträge der offenen Updates behalten; erledigte Fassungen fallen heraus.
+        aktuell = {f"{u['entity_id']}|{u['neu']}" for u in self.offene()}
+        self._zwischenspeicher = {k: v for k, v in self._zwischenspeicher.items() if k in aktuell}
+        self._fehlschlaege = {k: v for k, v in self._fehlschlaege.items() if k in aktuell}
         for update in offene:
             schluessel = f"{update['entity_id']}|{update['neu']}"
-            if schluessel not in self._zwischenspeicher:
-                notizen, quelle = await self._eine_notiz(sitzung, register, update, integrationen, laenge)
-                if not quelle.startswith("fehler"):
-                    self._zwischenspeicher[schluessel] = {"notizen": notizen, "quelle": quelle}
-                eintrag = {"notizen": notizen, "quelle": quelle}
-            else:
+            if schluessel in self._zwischenspeicher:
                 eintrag = self._zwischenspeicher[schluessel]
+            elif schluessel in self._fehlschlaege and time.time() - self._fehlschlaege[schluessel][0] < FEHLER_MERKEN:
+                eintrag = self._fehlschlaege[schluessel][1]
+            else:
+                notizen, quelle = await self._eine_notiz(sitzung, register, update, integrationen, laenge)
+                eintrag = {"notizen": notizen, "quelle": quelle}
+                if quelle.startswith("fehler"):
+                    self._fehlschlaege[schluessel] = (time.time(), eintrag)
+                else:
+                    self._zwischenspeicher[schluessel] = eintrag
+                    self._fehlschlaege.pop(schluessel, None)
             updates[update["entity_id"]] = {**update, **eintrag}
         return {"anzahl": len(updates), "updates": updates, "integrationen": integrationen}
 
@@ -144,42 +158,60 @@ class Sammler:
         plattform = eintrag.platform if eintrag else None
         kennung = (eintrag.unique_id if eintrag else "") or ""
         try:
-            if update["entity_id"] == "update.home_assistant_core_update":
+            # An Plattform und Kennung erkennen, nicht an der Entitäts-ID (die ist umbenennbar).
+            if (plattform == "hassio" and kennung == CORE_KENNUNG) or (
+                eintrag is None and update["entity_id"] == "update.home_assistant_core_update"
+            ):
                 return await self._core(sitzung, update, integrationen, laenge), "github+blog"
             if (
                 plattform == "hassio"
                 and kennung.endswith("_version_latest")
-                and not update["entity_id"].startswith("update.home_assistant_")
+                and not kennung.startswith("home_assistant_")
             ):
                 text = await quellen.addon_aenderungen(sitzung, kennung[: -len("_version_latest")], update["installiert"])
                 if text:
                     return quellen.kuerzen(text, laenge), "supervisor"
             if update["url"].startswith("https://github.com/"):
-                text = await quellen.github_release(sitzung, update["url"])
+                text = await self._github(sitzung, update["url"])
                 if text:
                     return quellen.kuerzen(text, laenge), "github"
+        except quellen.GithubGesperrt as err:
+            return "", f"fehler: {err}"
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             _LOGGER.debug("Notizen für %s nicht abrufbar: %s", update["entity_id"], err)
             return "", f"fehler: {type(err).__name__}"
         return "", "keine"
+
+    async def _github(self, sitzung: aiohttp.ClientSession, url: str) -> str | None:
+        """GitHub-Release, aber nicht während einer gemeldeten Sperre."""
+        if time.time() < self._github_bis:
+            raise quellen.GithubGesperrt(self._github_bis)
+        try:
+            return await quellen.github_release(sitzung, url)
+        except quellen.GithubGesperrt as err:
+            self._github_bis = err.bis
+            raise
 
     async def _core(
         self, sitzung: aiohttp.ClientSession, update: dict[str, str], integrationen: list[str], laenge: int
     ) -> str:
         stuecke = []
         if update["installiert"].split(".")[:2] != update["neu"].split(".")[:2]:
+            if uebersprungen := quellen.uebersprungene_hauptversionen(update["installiert"], update["neu"]):
+                stuecke.append(
+                    "Übersprungene Hauptversionen: " + ", ".join(uebersprungen)
+                    + ". Deren inkompatible Änderungen sind hier NICHT enthalten; sie stehen in den Release-Notizen dieser Versionen."
+                )
             try:
                 seite = await quellen.blog_html(sitzung)
                 stuecke.append(await self.hass.async_add_executor_job(quellen.blog_brueche, seite, integrationen))
-            except (aiohttp.ClientError, TimeoutError) as err:
+            except (aiohttp.ClientError, TimeoutError, ValueError) as err:
                 stuecke.append(f"Release-Blog nicht abrufbar ({type(err).__name__})")
         try:
-            text = await quellen.github_release(
-                sitzung, f"https://github.com/home-assistant/core/releases/tag/{update['neu']}"
-            )
+            text = await self._github(sitzung, f"https://github.com/home-assistant/core/releases/tag/{update['neu']}")
             if text and len(text) > 200:
                 stuecke.append(f"Patch-Notizen {update['neu']}:\n{text[:2500]}")
-        except (aiohttp.ClientError, TimeoutError):
+        except (aiohttp.ClientError, TimeoutError, ValueError, quellen.GithubGesperrt):
             pass
         return quellen.kuerzen("\n\n".join(s for s in stuecke if s), max(laenge * 2, 7000))
 

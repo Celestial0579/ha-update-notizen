@@ -19,7 +19,11 @@
           "uhrzeit": "Uhrzeit",
           "intervall": "Abstand",
           "nur_bei_aenderung": "Nur melden, wenn sich die offenen Updates geändert haben",
-          "max_zeichen": "Höchstens Zeichen je Update"
+          "max_zeichen": "Höchstens Zeichen je Update",
+          "ausgenommen": "Ausgenommene Updates"
+        },
+        "data_description": {
+          "ausgenommen": "Diese Updates erscheinen nie im Bericht, im Sensor und in der Abruf-Aktion – etwa Updates, die schon ein anderes Werkzeug meldet."
         }
       }
     }

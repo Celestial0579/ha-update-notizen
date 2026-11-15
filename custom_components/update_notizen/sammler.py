@@ -20,6 +20,7 @@ from homeassistant.util import dt as dt_util
 
 from . import quellen
 from .const import (
+    CONF_AUSGENOMMEN,
     CONF_INTERVALL,
     CONF_MAX_ZEICHEN,
     CONF_NUR_AENDERUNG,
@@ -32,6 +33,13 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 FEHLER_MERKEN = 1800  # Sekunden, bis ein fehlgeschlagener Abruf wiederholt wird
 CORE_KENNUNG = "home_assistant_core_version_latest"
+# Kennungen der System-Updates des Supervisors; jede andere `*_version_latest`-Kennung von hassio ist ein Add-on.
+SYSTEM_KENNUNGEN = {
+    CORE_KENNUNG,
+    "home_assistant_os_version_latest",
+    "home_assistant_supervisor_version_latest",
+}
+MIN_PATCHTEXT = 200  # kürzere Release-Texte des Core verweisen meist nur auf den Blog
 
 
 class Sammler:
@@ -101,11 +109,18 @@ class Sammler:
         teile = [geraet.name_by_user or geraet.name if geraet else None, eintrag.entity_name]
         return " ".join(t for t in teile if t) or zustand.name
 
+    def ausgenommen(self) -> set[str]:
+        """Entitäts-IDs der ausgenommenen Updates (gespeichert als Register-ID, folgt also dem Umbenennen)."""
+        register = er.async_get(self.hass)
+        aufgeloest = (er.async_resolve_entity_id(register, str(k)) for k in self.opt(CONF_AUSGENOMMEN) or [])
+        return {entity_id for entity_id in aufgeloest if entity_id}
+
     def offene(self) -> list[dict[str, str]]:
-        """Alle Update-Entitäten mit verfügbarem Update."""
+        """Alle Update-Entitäten mit verfügbarem Update, ohne die ausgenommenen."""
         ergebnis = []
+        ausgenommen = self.ausgenommen()
         for zustand in self.hass.states.async_all("update"):
-            if zustand.state != "on":
+            if zustand.state != "on" or zustand.entity_id in ausgenommen:
                 continue
             ergebnis.append(
                 {
@@ -158,16 +173,10 @@ class Sammler:
         plattform = eintrag.platform if eintrag else None
         kennung = (eintrag.unique_id if eintrag else "") or ""
         try:
-            # An Plattform und Kennung erkennen, nicht an der Entitäts-ID (die ist umbenennbar).
-            if (plattform == "hassio" and kennung == CORE_KENNUNG) or (
-                eintrag is None and update["entity_id"] == "update.home_assistant_core_update"
-            ):
+            # Nur über das Register erkennen, nie an der Entitäts-ID (die ist umbenennbar).
+            if plattform == "hassio" and kennung == CORE_KENNUNG:
                 return await self._core(sitzung, update, integrationen, laenge), "github+blog"
-            if (
-                plattform == "hassio"
-                and kennung.endswith("_version_latest")
-                and not kennung.startswith("home_assistant_")
-            ):
+            if plattform == "hassio" and kennung.endswith("_version_latest") and kennung not in SYSTEM_KENNUNGEN:
                 text = await quellen.addon_aenderungen(sitzung, kennung[: -len("_version_latest")], update["installiert"])
                 if text:
                     return quellen.kuerzen(text, laenge), "supervisor"
@@ -204,16 +213,16 @@ class Sammler:
                 )
             try:
                 seite = await quellen.blog_html(sitzung)
-                stuecke.append(await self.hass.async_add_executor_job(quellen.blog_brueche, seite, integrationen))
+                stuecke.append(await self.hass.async_add_executor_job(quellen.blog_brueche, seite, integrationen, laenge))
             except (aiohttp.ClientError, TimeoutError, ValueError) as err:
                 stuecke.append(f"Release-Blog nicht abrufbar ({type(err).__name__})")
         try:
             text = await self._github(sitzung, f"https://github.com/home-assistant/core/releases/tag/{update['neu']}")
-            if text and len(text) > 200:
-                stuecke.append(f"Patch-Notizen {update['neu']}:\n{text[:2500]}")
+            if text and len(text) > MIN_PATCHTEXT:
+                stuecke.append(f"Patch-Notizen {update['neu']}:\n{quellen.kuerzen(text, laenge * 5 // 7)}")
         except (aiohttp.ClientError, TimeoutError, ValueError, quellen.GithubGesperrt):
             pass
-        return quellen.kuerzen("\n\n".join(s for s in stuecke if s), max(laenge * 2, 7000))
+        return quellen.kuerzen("\n\n".join(s for s in stuecke if s), laenge * 2)
 
     # ------------------------------------------------------------ Bericht
     async def async_bericht_ausloesen(self, erzwingen: bool = False) -> None:

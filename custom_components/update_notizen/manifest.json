@@ -1,6 +1,7 @@
 {
   "domain": "update_notizen",
   "name": "Update-Notizen",
+  "categories": ["computers_network.monitoring"],
   "codeowners": ["@Celestial0579"],
   "config_flow": true,
   "documentation": "https://github.com/Celestial0579/ha-update-notizen",
@@ -9,5 +10,5 @@
   "issue_tracker": "https://github.com/Celestial0579/ha-update-notizen/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.1.1"
+  "version": "0.1.2"
 }

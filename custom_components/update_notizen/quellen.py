@@ -12,12 +12,37 @@ Alles ist Fremdtext; er wird gekürzt und nur weitergereicht.
 from __future__ import annotations
 
 import html
+import json
 import os
+from pathlib import Path
 import re
+import time
 
 import aiohttp
 
-USER_AGENT = "HomeAssistant-update_notizen/0.1 (+https://github.com/Celestial0579/ha-update-notizen)"
+FASSUNG = json.loads(Path(__file__).with_name("manifest.json").read_text(encoding="utf-8"))["version"]
+USER_AGENT = f"HomeAssistant-update_notizen/{FASSUNG} (+https://github.com/Celestial0579/ha-update-notizen)"
+
+
+class GithubGesperrt(Exception):
+    """GitHub hat das Ratenlimit gemeldet; bis `bis` (Unix-Zeit) nicht mehr fragen."""
+
+    def __init__(self, bis: float) -> None:
+        super().__init__(f"GitHub-Ratenlimit bis {time.strftime('%H:%M', time.localtime(bis))}")
+        self.bis = bis
+
+
+def _sperre_bis(kopf) -> float:
+    """Ende der Sperre aus Retry-After oder X-RateLimit-Reset, sonst eine Stunde."""
+    jetzt = time.time()
+    try:
+        if kopf.get("Retry-After"):
+            return jetzt + min(float(kopf["Retry-After"]), 6 * 3600)
+        if kopf.get("X-RateLimit-Reset"):
+            return min(float(kopf["X-RateLimit-Reset"]), jetzt + 6 * 3600)
+    except ValueError:
+        pass
+    return jetzt + 3600
 _ZEIT = aiohttp.ClientTimeout(total=30)
 
 ALLGEMEIN = {
@@ -52,9 +77,13 @@ async def github_release(sitzung: aiohttp.ClientSession, url: str) -> str | None
     ) as antwort:
         if antwort.status == 404:
             return None
+        if antwort.status == 429 or (antwort.status == 403 and antwort.headers.get("X-RateLimit-Remaining") == "0"):
+            raise GithubGesperrt(_sperre_bis(antwort.headers))
         antwort.raise_for_status()
         daten = await antwort.json()
-    return daten.get("body") or ""
+    if not isinstance(daten, dict):
+        raise ValueError("Antwort von GitHub ist kein Objekt")
+    return str(daten.get("body") or "")
 
 
 async def addon_aenderungen(sitzung: aiohttp.ClientSession, slug: str, installiert: str) -> str | None:
@@ -67,14 +96,28 @@ async def addon_aenderungen(sitzung: aiohttp.ClientSession, slug: str, installie
         {"Authorization": f"Bearer {token}"},
     )
     zeilen = text.splitlines()
-    for nummer, zeile in enumerate(zeilen):
-        if nummer and installiert and zeile.lstrip().startswith("#") and installiert in zeile:
-            return "\n".join(zeilen[:nummer])
+    if installiert:
+        # Die Fassung als ganzes Wort: „1.2.1“ steckt nicht in „1.2.10“ oder „11.2.1“.
+        muster = re.compile(rf"(?<![0-9])(?<![0-9]\.){re.escape(installiert)}(?![0-9])(?!\.[0-9])")
+        for nummer, zeile in enumerate(zeilen):
+            if nummer and zeile.lstrip().startswith("#") and muster.search(zeile):
+                return "\n".join(zeilen[:nummer])
     return text
 
 
 async def blog_html(sitzung: aiohttp.ClientSession) -> str:
     return await _holen(sitzung, "https://www.home-assistant.io/latest-release-notes/")
+
+
+def uebersprungene_hauptversionen(installiert: str, neu: str) -> list[str]:
+    """Hauptversionen (JJJJ.M) zwischen der installierten und der neuen, ohne beide."""
+    try:
+        a_jahr, a_monat = (int(x) for x in installiert.split(".")[:2])
+        n_jahr, n_monat = (int(x) for x in neu.split(".")[:2])
+    except ValueError:
+        return []
+    von, bis = a_jahr * 12 + a_monat - 1, n_jahr * 12 + n_monat - 1
+    return [f"{m // 12}.{m % 12 + 1}" for m in range(von + 1, bis)][:24]
 
 
 def _norm(text: str) -> str:
@@ -86,7 +129,9 @@ def blog_brueche(seite: str, integrationen: list[str]) -> str:
     positionen = [m.start() for m in re.finditer(r"<h2", seite)]
     teil = ""
     for nummer, pos in enumerate(positionen):
-        if "Backward-incompatible changes" in re.sub(r"<[^>]+>", "", seite[pos:pos + 400]):
+        # Nur die Überschrift selbst prüfen, nicht den Text danach (eine kurze Vorgängerüberschrift träfe sonst).
+        ende = seite.find("</h2>", pos)
+        if "Backward-incompatible changes" in re.sub(r"<[^>]+>", "", seite[pos:ende if ende > 0 else pos + 400]):
             teil = seite[pos:positionen[nummer + 1]] if nummer + 1 < len(positionen) else seite[pos:]
             break
     if not teil:

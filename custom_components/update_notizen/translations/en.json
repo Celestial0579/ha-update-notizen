@@ -19,7 +19,11 @@
           "uhrzeit": "Time",
           "intervall": "Interval",
           "nur_bei_aenderung": "Only report when the pending updates changed",
-          "max_zeichen": "Maximum characters per update"
+          "max_zeichen": "Maximum characters per update",
+          "ausgenommen": "Excluded updates"
+        },
+        "data_description": {
+          "ausgenommen": "These updates never appear in the report, the sensor or the fetch action – for example updates another tool already reports."
         }
       }
     }

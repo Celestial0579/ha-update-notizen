@@ -6,12 +6,14 @@ CONF_UHRZEIT = "uhrzeit"
 CONF_INTERVALL = "intervall"
 CONF_NUR_AENDERUNG = "nur_bei_aenderung"
 CONF_MAX_ZEICHEN = "max_zeichen"
+CONF_AUSGENOMMEN = "ausgenommen"
 
 STANDARD_OPTIONEN = {
     CONF_UHRZEIT: "10:00:00",
     CONF_INTERVALL: 24,  # Stunden
     CONF_NUR_AENDERUNG: False,
     CONF_MAX_ZEICHEN: 3500,
+    CONF_AUSGENOMMEN: [],  # Register-IDs (oder Entitäts-IDs ohne Registereintrag)
 }
 
 EREIGNIS_BERICHT = "update_notizen_bericht"

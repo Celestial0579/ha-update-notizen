@@ -11,7 +11,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DIENST_ABRUFEN, DOMAIN
+from .const import CONF_AUSGENOMMEN, DIENST_ABRUFEN, DOMAIN
 from .sammler import Sammler
 
 PLATFORMS = [Platform.BUTTON, Platform.SENSOR]
@@ -33,6 +33,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.services.async_register(
         DOMAIN, DIENST_ABRUFEN, abrufen, schema=ABRUFEN_SCHEMA, supports_response=SupportsResponse.ONLY
     )
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: UpdateNotizenConfigEntry) -> bool:
+    """1.1 → 1.2: Option „ausgenommen“ mit leerer Liste ergänzen."""
+    if entry.version > 1:
+        return False
+    if entry.minor_version < 2:
+        hass.config_entries.async_update_entry(
+            entry, options={CONF_AUSGENOMMEN: [], **entry.options}, minor_version=2
+        )
     return True
 
 

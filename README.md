@@ -30,7 +30,7 @@ ohne Anmeldung 60 Abfragen pro Stunde).
 1. HACS › drei Punkte › **Benutzerdefinierte Repositories** › diese Repository-URL, Typ **Integration**.
 2. „Update-Notizen“ installieren, Home Assistant neu starten.
 3. **Einstellungen › Geräte & Dienste › Integration hinzufügen › Update-Notizen**.
-4. Unter **Konfigurieren**: Uhrzeit und Abstand (Vorgabe täglich 10:00), „nur bei Änderung melden“, Länge je Update.
+4. Unter **Konfigurieren**: Uhrzeit und Abstand (Vorgabe täglich 10:00), „nur bei Änderung melden“, Länge je Update und **ausgenommene Updates**. Ausgenommene erscheinen weder im Bericht noch im Sensor oder in `update_notizen.abrufen` und lösen auch „nur bei Änderung“ nicht aus. Die Auswahl folgt einem Umbenennen der Entität.
 
 ## Beispiel: Bericht per Automation
 

@@ -124,8 +124,11 @@ def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (text or "").lower())
 
 
-def blog_brueche(seite: str, integrationen: list[str]) -> str:
-    """Abschnitt „Backward-incompatible changes“, gefiltert auf das, was hier installiert ist (blockierend)."""
+def blog_brueche(seite: str, integrationen: list[str], laenge: int = 3500) -> str:
+    """Abschnitt „Backward-incompatible changes“, gefiltert auf das, was hier installiert ist (blockierend).
+
+    Jeder Eintrag wird nach `laenge` (max_zeichen) gekürzt: ein Fünftel für installierte, ein Siebtel für allgemeine.
+    """
     positionen = [m.start() for m in re.finditer(r"<h2", seite)]
     teil = ""
     for nummer, pos in enumerate(positionen):
@@ -146,9 +149,9 @@ def blog_brueche(seite: str, integrationen: list[str]) -> str:
         text = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", block))).strip()
         nn = _norm(name)
         if any(nn == d or (len(d) >= 4 and nn.startswith(d)) or (len(nn) >= 5 and d.startswith(nn)) for d in domaenen):
-            treffer.append(f"- {name}: {text[:700]}")
+            treffer.append(f"- {name}: {kuerzen(text, laenge // 5)}")
         elif set(re.findall(r"[a-z]+", name.lower())) & ALLGEMEIN:
-            allgemein.append(f"- {name}: {text[:500]}")
+            allgemein.append(f"- {name}: {kuerzen(text, laenge // 7)}")
         else:
             andere.append(name)
     titel = re.search(r"<title>(.*?)</title>", seite, re.S)

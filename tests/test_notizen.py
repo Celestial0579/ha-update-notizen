@@ -105,3 +105,41 @@ async def test_core_an_der_kennung_erkannt(hass: HomeAssistant) -> None:
 
 def test_user_agent_nennt_die_fassung() -> None:
     assert f"/{quellen.FASSUNG} " in quellen.USER_AGENT
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "https://github.com/../r/releases/tag/v2",
+        "https://github.com/o/../releases/tag/v2",
+        "https://github.com/o/./releases/tag/v2",
+        "https://github.com/o/r/releases/tag/..",
+        "https://github.com/o?x=1/r/releases/tag/v2",
+        "https://github.com/o#x/r/releases/tag/v2",
+        "https://github.com/o/r/releases/tag/v2/../../../../users/x",
+        "https://github.com/-o/r/releases/tag/v2",
+        "https://example.com/o/r/releases/tag/v2",
+    ],
+)
+async def test_ungueltige_release_links_werden_nicht_abgefragt(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, link: str
+) -> None:
+    """#14: Eigentümer, Repo und Tag nur als gültige Namen; kein anderer Pfad der API."""
+    assert await quellen.github_release(async_get_clientsession(hass), link) is None
+    assert aioclient_mock.call_count == 0
+
+
+@pytest.mark.parametrize(
+    ("link", "tag"),
+    [
+        ("https://github.com/o/r.js/releases/tag/v2", "v2"),
+        ("https://github.com/o-1/r_2/releases/v2.0.1", "v2.0.1"),
+        ("https://github.com/o/r/releases/tag/v2?x=1#y", "v2"),
+        ("https://github.com/o/r/releases/tag/v2%2B1", "v2%2B1"),
+        ("https://github.com/o/r/releases/tag/v2+1", "v2%2B1"),
+    ],
+)
+async def test_gueltige_release_links(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, link: str, tag: str) -> None:
+    eigner, repo = link.split("/")[3:5]
+    aioclient_mock.get(f"https://api.github.com/repos/{eigner}/{repo}/releases/tags/{tag}", json={"body": "Notiz"})
+    assert await quellen.github_release(async_get_clientsession(hass), link) == "Notiz"

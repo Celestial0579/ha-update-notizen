@@ -76,9 +76,10 @@ async def github_release(sitzung: aiohttp.ClientSession, url: str) -> str | None
     if not treffer:
         return None
     eigner, repo, tag = treffer.groups()
-    if repo in (".", "..") or tag in (".", ".."):
+    tag = unquote(tag)  # erst dekodieren, dann prüfen: „%2e%2e“ ist auch „..“ (#17)
+    if repo in (".", "..") or tag in ("", ".", ".."):
         return None
-    tag = quote(unquote(tag), safe="")
+    tag = quote(tag, safe="")
     async with sitzung.get(
         f"https://api.github.com/repos/{eigner}/{repo}/releases/tags/{tag}",
         headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"},
